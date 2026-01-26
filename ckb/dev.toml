@@ -110,10 +110,11 @@ capacity = 20_000_000_000_00000000
 lock.code_hash = "0x9bd7e06f3ecf4be0f2fcd2188b23f1b9fcc88e5d4b65a8637b17723bbda3cce8"
 lock.args = "0x470dcdc5e44064909650113a274b3b36aecb6dc7"
 lock.hash_type = "type"
+# blake2b hash of binary file `simple_udt`
 type.code_hash = "0xe1e354d6d643ad42724d40967e334984534e0367405c5ae42a9d7d63d77df419"
-type.args = "0x470dcdc5e44064909650113a274b3b36aecb6dc7"
+type.args = "0xc219351b150b900e50a7039f1e448b844110927e5fd9bd30425806cb8ddff1fd"
 type.hash_type = "data"
-data = "0x00e40b5402000000000000000000000000"  
+data = "0x00e40b54020000000000000000000000"
 
 [params]
 initial_primary_epoch_reward = 1_917_808_21917808

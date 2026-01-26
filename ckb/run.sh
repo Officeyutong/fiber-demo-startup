@@ -1,5 +1,5 @@
 #!/bin/bash
-/ckb run &
+/ckb run --indexer &
 CKB_RUN_PID=$!
 
 /ckb miner &
@@ -10,8 +10,8 @@ echo "ckb miner PID: $CKB_MINER_PID"
 
 cleanup() {
     echo "Stopping ckb miner and ckb run..."
-    kill -INT $CKB_MINER_PID 2>/dev/null
-    kill -INT $CKB_RUN_PID 2>/dev/null
+    kill -TERM $CKB_MINER_PID 2>/dev/null
+    kill -TERM $CKB_RUN_PID 2>/dev/null
     wait $CKB_MINER_PID 2>/dev/null
     wait $CKB_RUN_PID 2>/dev/null
     echo "Done"

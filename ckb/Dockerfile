@@ -11,7 +11,7 @@ RUN cd /root/ckb && /root/.cargo/bin/cargo build --release && cp target/release/
 
 COPY ./dev.toml /
 COPY ./contracts /contracts
-
+RUN echo 111
 RUN /ckb init --import-spec /dev.toml -c dev
 
 RUN sed -i 's/127\.0\.0\.1:8114/0.0.0.0:8114/g' /ckb.toml
@@ -20,9 +20,9 @@ RUN echo code_hash = \"0x9bd7e06f3ecf4be0f2fcd2188b23f1b9fcc88e5d4b65a8637b17723
 RUN echo args = \"0x7184c9779c6163ff63a86985f61769d600cbef8b\"  >> ckb.toml
 RUN echo hash_type = \"type\"  >> ckb.toml
 RUN echo message = \"0x\" >> ckb.toml
-RUN sed -i 's/modules = \[/modules = ["Miner", /' ckb.toml
+RUN sed -i 's/modules = \[/modules = ["Indexer" ,"Miner", /' ckb.toml
 
 COPY ./run.sh /
 RUN chmod +x /run.sh
 
-ENTRYPOINT /run.sh
+ENTRYPOINT ["/run.sh"]
