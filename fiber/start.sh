@@ -1,6 +1,18 @@
 #!/bin/bash
-/create-ckb-account.sh
-mkdir ckb
-echo 12345678 | /ckb-cli account export --lock-arg $(/ckb-cli account list --output-format json | jq -r ".[0].lock_arg") --extended-privkey-path /ckb-key
-head -n 1 ./ckb-key > ./ckb/key
-FIBER_SECRET_KEY_PASSWORD=12345678 /fnn -c /config.yml -d .
+
+cleanup() {
+    echo "Stopping services..."
+    kill $FIBER_PID $SOCAT_PID 2>/dev/null
+    wait $FIBER_PID $SOCAT_PID 2>/dev/null
+    exit 0
+}
+
+trap cleanup SIGINT SIGTERM
+
+socat TCP-LISTEN:10000,fork,bind=0.0.0.0,reuseaddr TCP:127.0.0.1:41716 &
+SOCAT_PID=$!
+
+RUST_LOG=info FIBER_SECRET_KEY_PASSWORD=12345678 /fnn -c /config.yml -d . &
+FIBER_PID=$!
+
+wait $FIBER_PID $SOCAT_PID

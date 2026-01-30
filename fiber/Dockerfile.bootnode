@@ -11,14 +11,21 @@ RUN cd /root && git clone --recursive https://github.com/nervosnetwork/ckb-cli.g
 RUN cd /root/fiber && /root/.cargo/bin/cargo build --release && cp target/release/fnn /
 RUN cd /root/ckb-cli && /root/.cargo/bin/cargo build --release && cp target/release/ckb-cli /
 
-COPY create-ckb-account.sh /
-RUN chmod +x create-ckb-account.sh
-
-
-COPY config.yml /
+COPY config-bootnode.yml /config.yml
 COPY dev.toml /
 COPY contracts /contracts
+RUN mkdir /ckb
+COPY ckb-keys/bootnode-key /ckb/key
+RUN apt-get install socat -y
+RUN apt-get install openssl -y
+
+RUN mkdir /fiber
+COPY fiber-keys/bootnode-key /fiber/sk
+RUN chmod 400 /fiber/sk
+
 
 COPY start.sh /start.sh
 RUN chmod +x /start.sh
+
+
 ENTRYPOINT ["/start.sh"]

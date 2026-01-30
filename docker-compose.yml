@@ -1,0 +1,88 @@
+services:
+  ckb:
+    build:
+      context: ./ckb
+      dockerfile: Dockerfile
+      network: host
+    healthcheck:
+      test: ["CMD", "curl", "http://127.0.0.1:8114"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
+  fiber-bootnode:
+    build:
+      context: ./fiber
+      dockerfile: Dockerfile.bootnode
+      network: host
+    healthcheck:
+      test: ["CMD", "curl", "http://127.0.0.1:41716"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
+    ports:
+      - 8230:8228
+      - 10000:10000
+    depends_on:
+      ckb:
+        condition: service_healthy
+    environment:
+      - RUST_LOG=info
+  fiber-node1:
+    build:
+      context: ./fiber
+      dockerfile: Dockerfile.node1
+      network: host
+    healthcheck:
+      test: ["CMD", "curl", "http://127.0.0.1:41716"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
+    depends_on:
+      ckb:
+        condition: service_healthy
+      fiber-bootnode:
+        condition: service_healthy
+    ports:
+      - 8231:8228
+      - 10001:10000
+  fiber-node2:
+    build:
+      context: ./fiber
+      dockerfile: Dockerfile.node2
+      network: host
+    healthcheck:
+      test: ["CMD", "curl", "http://127.0.0.1:41716"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
+    depends_on:
+      ckb:
+        condition: service_healthy
+      fiber-bootnode:
+        condition: service_healthy
+    ports:
+      - 8232:8228
+      - 10002:10000
+  fiber-node3:
+    build:
+      context: ./fiber
+      dockerfile: Dockerfile.node3
+      network: host
+    healthcheck:
+      test: ["CMD", "curl", "http://127.0.0.1:41716"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
+    depends_on:
+      ckb:
+        condition: service_healthy
+      fiber-bootnode:
+        condition: service_healthy
+    ports:
+      - 8233:8228
+      - 10003:10000
