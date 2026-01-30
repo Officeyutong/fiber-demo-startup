@@ -36,6 +36,8 @@ const CKB_TRANSFER_AMOUNT: u64 = 1_000_000_000_00000000;
 const SUDT_TRANSFER_AMOUNT: u128 = 1_000_000_000;
 // Minimum cell capacity for sUDT cell (142 CKB)
 const MIN_SUDT_CELL_CAPACITY: u64 = 142_00000000;
+// Minimum cell capacity for pure CKB cell (61 CKB)
+const MIN_CKB_CELL_CAPACITY: u64 = 61_00000000;
 // Transaction fee
 const TX_FEE: u64 = 100000;
 
@@ -270,24 +272,67 @@ fn build_packed_sudt_type_script() -> PackedScript {
         .build()
 }
 
-/// Transfer CKB to multiple recipients
-fn transfer_ckb(
+/// Transfer CKB and sUDT in a single transaction
+fn transfer_ckb_and_sudt(
     client: &CkbRpcClient,
     from_private_key: &str,
-    recipients: &[(&str, u64)], // (private_key, amount)
+    ckb_recipients: &[(&str, u64)],   // (private_key, ckb_amount)
+    sudt_recipients: &[(&str, u128)], // (private_key, sudt_amount)
 ) -> H256 {
-    // Calculate total amount needed
-    let total_amount: u64 = recipients.iter().map(|(_, amount)| *amount).sum();
-    let total_needed = total_amount + TX_FEE;
+    // Calculate total CKB amount needed for pure CKB outputs
+    let total_ckb_for_recipients: u64 = ckb_recipients.iter().map(|(_, amount)| *amount).sum();
 
-    // Find CKB cells
-    let ckb_cells = find_ckb_cells(client, from_private_key);
+    // Calculate total sUDT amount needed
+    let total_sudt_amount: u128 = sudt_recipients.iter().map(|(_, amount)| *amount).sum();
 
-    // Collect enough inputs
+    // Calculate capacity needed for sUDT outputs
+    let sudt_outputs_capacity = MIN_SUDT_CELL_CAPACITY * sudt_recipients.len() as u64;
+
+    // Total capacity needed (CKB outputs + sUDT outputs capacity + fee + potential change cells)
+    let total_capacity_needed =
+        total_ckb_for_recipients + sudt_outputs_capacity + TX_FEE + MIN_SUDT_CELL_CAPACITY;
+
+    // Collect sUDT cells first
+    let sudt_cells = find_sudt_cells(client, from_private_key);
+    assert!(!sudt_cells.is_empty(), "No sUDT cells found");
+
     let mut inputs = Vec::new();
+    let mut input_sudt_amount: u128 = 0;
     let mut input_capacity: u64 = 0;
 
+    // Add sUDT cells as inputs
+    for cell in &sudt_cells {
+        inputs.push(
+            CellInput::new_builder()
+                .previous_output(
+                    ckb_types::packed::OutPoint::new_builder()
+                        .tx_hash(cell.out_point.tx_hash.0.pack())
+                        .index(cell.out_point.index.value() as u32)
+                        .build(),
+                )
+                .build(),
+        );
+        input_sudt_amount += parse_sudt_amount(cell.output_data.as_bytes());
+        input_capacity += u64::from(cell.output.capacity);
+
+        if input_sudt_amount >= total_sudt_amount {
+            break;
+        }
+    }
+
+    assert!(
+        input_sudt_amount >= total_sudt_amount,
+        "Not enough sUDT. Have: {}, Need: {}",
+        input_sudt_amount,
+        total_sudt_amount
+    );
+
+    // Add pure CKB cells if needed
+    let ckb_cells = find_ckb_cells(client, from_private_key);
     for cell in &ckb_cells {
+        if input_capacity >= total_capacity_needed {
+            break;
+        }
         inputs.push(
             CellInput::new_builder()
                 .previous_output(
@@ -299,42 +344,78 @@ fn transfer_ckb(
                 .build(),
         );
         input_capacity += u64::from(cell.output.capacity);
-
-        if input_capacity >= total_needed {
-            break;
-        }
     }
 
     assert!(
-        input_capacity >= total_needed,
-        "Not enough CKB. Have: {}, Need: {}",
+        input_capacity >= total_capacity_needed,
+        "Not enough CKB capacity. Have: {}, Need: {}",
         input_capacity,
-        total_needed
+        total_capacity_needed
     );
 
     // Build outputs
     let mut outputs = Vec::new();
     let mut outputs_data = Vec::new();
+    let sudt_type_script = build_packed_sudt_type_script();
 
-    for (recipient_key, amount) in recipients {
+    // 1. Pure CKB outputs for CKB recipients
+    for (recipient_key, ckb_amount) in ckb_recipients {
         let lock_script = build_packed_lock_script(recipient_key);
         let output = CellOutputBuilder::default()
-            .capacity(ckb_types::core::Capacity::shannons(*amount).pack())
+            .capacity(ckb_types::core::Capacity::shannons(*ckb_amount).pack())
             .lock(lock_script)
             .build();
         outputs.push(output);
         outputs_data.push(ckb_types::packed::Bytes::default());
     }
 
-    // Change output
-    let change_amount = input_capacity - total_amount - TX_FEE;
-    if change_amount > 0 {
-        let change_lock_script = build_packed_lock_script(from_private_key);
-        let change_output = CellOutputBuilder::default()
-            .capacity(ckb_types::core::Capacity::shannons(change_amount).pack())
+    // 2. sUDT outputs for sUDT recipients
+    for (recipient_key, sudt_amount) in sudt_recipients {
+        let lock_script = build_packed_lock_script(recipient_key);
+        let output = CellOutputBuilder::default()
+            .capacity(ckb_types::core::Capacity::shannons(MIN_SUDT_CELL_CAPACITY).pack())
+            .lock(lock_script)
+            .type_(Some(sudt_type_script.clone()).pack())
+            .build();
+        outputs.push(output);
+        outputs_data.push(encode_sudt_amount(*sudt_amount).pack());
+    }
+
+    // 3. Calculate change amounts
+    let used_capacity = total_ckb_for_recipients + sudt_outputs_capacity + TX_FEE;
+    let change_capacity = input_capacity - used_capacity;
+    let change_sudt_amount = input_sudt_amount - total_sudt_amount;
+
+    // 4. Add change outputs
+    let change_lock_script = build_packed_lock_script(from_private_key);
+
+    if change_sudt_amount > 0 {
+        // sUDT change cell
+        let sudt_change_output = CellOutputBuilder::default()
+            .capacity(ckb_types::core::Capacity::shannons(MIN_SUDT_CELL_CAPACITY).pack())
+            .lock(change_lock_script.clone())
+            .type_(Some(sudt_type_script.clone()).pack())
+            .build();
+        outputs.push(sudt_change_output);
+        outputs_data.push(encode_sudt_amount(change_sudt_amount).pack());
+
+        // Remaining CKB change (if any)
+        let remaining_ckb_change = change_capacity - MIN_SUDT_CELL_CAPACITY;
+        if remaining_ckb_change > MIN_CKB_CELL_CAPACITY {
+            let ckb_change_output = CellOutputBuilder::default()
+                .capacity(ckb_types::core::Capacity::shannons(remaining_ckb_change).pack())
+                .lock(change_lock_script)
+                .build();
+            outputs.push(ckb_change_output);
+            outputs_data.push(ckb_types::packed::Bytes::default());
+        }
+    } else if change_capacity > MIN_CKB_CELL_CAPACITY {
+        // Only CKB change
+        let ckb_change_output = CellOutputBuilder::default()
+            .capacity(ckb_types::core::Capacity::shannons(change_capacity).pack())
             .lock(change_lock_script)
             .build();
-        outputs.push(change_output);
+        outputs.push(ckb_change_output);
         outputs_data.push(ckb_types::packed::Bytes::default());
     }
 
@@ -365,181 +446,6 @@ fn transfer_ckb(
                 .dep_type(Byte::new(ckb_types::core::DepType::DepGroup as u8))
                 .build(),
         )
-        .build();
-
-    // Sign and send
-    let tx = sign_transaction(tx, from_private_key);
-
-    let tx_hash = client
-        .send_transaction(tx.data().into(), None)
-        .expect("Failed to send CKB transfer transaction");
-
-    println!("CKB transfer transaction sent: {:#x}", tx_hash);
-    tx_hash
-}
-
-/// Transfer sUDT to multiple recipients
-fn transfer_sudt(
-    client: &CkbRpcClient,
-    from_private_key: &str,
-    recipients: &[(&str, u128)], // (private_key, sudt_amount)
-) -> H256 {
-    // Calculate total sUDT amount needed
-    let total_sudt_amount: u128 = recipients.iter().map(|(_, amount)| *amount).sum();
-
-    // Find sUDT cells
-    let sudt_cells = find_sudt_cells(client, from_private_key);
-    assert!(!sudt_cells.is_empty(), "No sUDT cells found");
-
-    // Collect sUDT inputs
-    let mut inputs = Vec::new();
-    let mut input_sudt_amount: u128 = 0;
-    let mut input_capacity: u64 = 0;
-
-    for cell in &sudt_cells {
-        inputs.push(
-            CellInput::new_builder()
-                .previous_output(
-                    ckb_types::packed::OutPoint::new_builder()
-                        .tx_hash(cell.out_point.tx_hash.0.pack())
-                        .index(cell.out_point.index.value() as u32)
-                        .build(),
-                )
-                .build(),
-        );
-        input_sudt_amount += parse_sudt_amount(cell.output_data.as_bytes());
-        input_capacity += u64::from(cell.output.capacity);
-
-        if input_sudt_amount >= total_sudt_amount {
-            break;
-        }
-    }
-
-    assert!(
-        input_sudt_amount >= total_sudt_amount,
-        "Not enough sUDT. Have: {}, Need: {}",
-        input_sudt_amount,
-        total_sudt_amount
-    );
-
-    // Calculate capacity needed for outputs
-    let capacity_per_output = MIN_SUDT_CELL_CAPACITY;
-    let total_output_capacity = capacity_per_output * recipients.len() as u64;
-
-    // Check if we need more CKB cells for capacity
-    let mut ckb_inputs = Vec::new();
-    if input_capacity < total_output_capacity + TX_FEE + MIN_SUDT_CELL_CAPACITY {
-        // Need more CKB
-        let ckb_cells = find_ckb_cells(client, from_private_key);
-        let needed_capacity =
-            total_output_capacity + TX_FEE + MIN_SUDT_CELL_CAPACITY - input_capacity;
-        let mut collected: u64 = 0;
-
-        for cell in &ckb_cells {
-            ckb_inputs.push(
-                CellInput::new_builder()
-                    .previous_output(
-                        ckb_types::packed::OutPoint::new_builder()
-                            .tx_hash(cell.out_point.tx_hash.0.pack())
-                            .index(cell.out_point.index.value() as u32)
-                            .build(),
-                    )
-                    .build(),
-            );
-            collected += u64::from(cell.output.capacity);
-            input_capacity += u64::from(cell.output.capacity);
-
-            if collected >= needed_capacity {
-                break;
-            }
-        }
-    }
-
-    // Build outputs
-    let mut outputs = Vec::new();
-    let mut outputs_data = Vec::new();
-    let sudt_type_script = build_packed_sudt_type_script();
-
-    for (recipient_key, sudt_amount) in recipients {
-        let lock_script = build_packed_lock_script(recipient_key);
-        let output = CellOutputBuilder::default()
-            .capacity(ckb_types::core::Capacity::shannons(capacity_per_output).pack())
-            .lock(lock_script)
-            .type_(Some(sudt_type_script.clone()).pack())
-            .build();
-        outputs.push(output);
-        outputs_data.push(encode_sudt_amount(*sudt_amount).pack());
-    }
-
-    // Change sUDT output
-    let change_sudt_amount = input_sudt_amount - total_sudt_amount;
-    let change_capacity = input_capacity - total_output_capacity - TX_FEE;
-
-    if change_sudt_amount > 0 {
-        let change_lock_script = build_packed_lock_script(from_private_key);
-        let change_output = CellOutputBuilder::default()
-            .capacity(ckb_types::core::Capacity::shannons(MIN_SUDT_CELL_CAPACITY).pack())
-            .lock(change_lock_script.clone())
-            .type_(Some(sudt_type_script.clone()).pack())
-            .build();
-        outputs.push(change_output);
-        outputs_data.push(encode_sudt_amount(change_sudt_amount).pack());
-
-        // Pure CKB change if any remaining
-        let remaining_capacity = change_capacity - MIN_SUDT_CELL_CAPACITY;
-        if remaining_capacity > 61_00000000 {
-            let ckb_change_output = CellOutputBuilder::default()
-                .capacity(ckb_types::core::Capacity::shannons(remaining_capacity).pack())
-                .lock(change_lock_script)
-                .build();
-            outputs.push(ckb_change_output);
-            outputs_data.push(ckb_types::packed::Bytes::default());
-        }
-    } else if change_capacity > 61_00000000 {
-        // Only CKB change
-        let change_lock_script = build_packed_lock_script(from_private_key);
-        let change_output = CellOutputBuilder::default()
-            .capacity(ckb_types::core::Capacity::shannons(change_capacity).pack())
-            .lock(change_lock_script)
-            .build();
-        outputs.push(change_output);
-        outputs_data.push(ckb_types::packed::Bytes::default());
-    }
-
-    // Build transaction
-    let mut tx_builder = TransactionView::new_advanced_builder();
-
-    // Add sUDT inputs first
-    for input in inputs.iter() {
-        tx_builder = tx_builder.input(input.clone());
-    }
-
-    // Add CKB inputs
-    for input in ckb_inputs.iter() {
-        tx_builder = tx_builder.input(input.clone());
-    }
-
-    for output in outputs {
-        tx_builder = tx_builder.output(output);
-    }
-
-    for data in outputs_data {
-        tx_builder = tx_builder.output_data(data);
-    }
-
-    // Add witnesses
-    let total_inputs = inputs.len() + ckb_inputs.len();
-    for _ in 0..total_inputs {
-        tx_builder = tx_builder.witness(WitnessArgs::default().as_bytes().pack());
-    }
-
-    let tx = tx_builder
-        .cell_dep(
-            ckb_types::packed::CellDep::new_builder()
-                .out_point(get_secp256k1_cell_dep(client))
-                .dep_type(Byte::new(ckb_types::core::DepType::DepGroup as u8))
-                .build(),
-        )
         .cell_dep(
             ckb_types::packed::CellDep::new_builder()
                 .out_point(get_sudt_cell_dep(client))
@@ -553,9 +459,12 @@ fn transfer_sudt(
 
     let tx_hash = client
         .send_transaction(tx.data().into(), None)
-        .expect("Failed to send sUDT transfer transaction");
+        .expect("Failed to send combined transfer transaction");
 
-    println!("sUDT transfer transaction sent: {:#x}", tx_hash);
+    println!(
+        "Combined CKB and sUDT transfer transaction sent: {:#x}",
+        tx_hash
+    );
     tx_hash
 }
 
@@ -581,14 +490,16 @@ fn main() {
 
     // Print recipient addresses
     println!("Target accounts:");
-    for (i, key) in [&bootnode_key, &node1_key, &node2_key, &node3_key]
-        .iter()
-        .enumerate()
-    {
+    for (name, key) in [
+        ("Bootnode", &bootnode_key),
+        ("Node1", &node1_key),
+        ("Node2", &node2_key),
+        ("Node3", &node3_key),
+    ] {
         let lock_script = get_lock_script_from_private_key(key);
         println!(
-            "  Node{}: args = 0x{}",
-            i + 1,
+            "  {}: args = 0x{}",
+            name,
             hex::encode(lock_script.args.as_bytes())
         );
     }
@@ -607,11 +518,13 @@ fn main() {
     println!("Source sUDT balance: {}", total_sudt);
     println!();
 
-    // Transfer CKB (10 billion CKB to each node)
+    // Combined transfer: CKB to 4 nodes, sUDT to 3 nodes (excluding bootnode)
     println!(
-        "Transferring {} CKB to each node...",
-        CKB_TRANSFER_AMOUNT / 100000000
+        "Transferring {} CKB to each node and {} sUDT to node1/node2/node3 in a single transaction...",
+        CKB_TRANSFER_AMOUNT / 100000000,
+        SUDT_TRANSFER_AMOUNT
     );
+
     let ckb_recipients: Vec<(&str, u64)> = vec![
         (&bootnode_key, CKB_TRANSFER_AMOUNT),
         (&node1_key, CKB_TRANSFER_AMOUNT),
@@ -619,23 +532,14 @@ fn main() {
         (&node3_key, CKB_TRANSFER_AMOUNT),
     ];
 
-    let ckb_tx_hash = transfer_ckb(&client, &source_key, &ckb_recipients);
-    println!("CKB transfer complete: {:#x}\n", ckb_tx_hash);
-
-    // Wait for transaction to be committed
-    println!("Waiting for CKB transaction to be committed...");
-    std::thread::sleep(std::time::Duration::from_secs(10));
-
-    // Transfer sUDT (10 billion sUDT to each node)
-    println!("Transferring {} sUDT to each node...", SUDT_TRANSFER_AMOUNT);
     let sudt_recipients: Vec<(&str, u128)> = vec![
         (&node1_key, SUDT_TRANSFER_AMOUNT),
         (&node2_key, SUDT_TRANSFER_AMOUNT),
         (&node3_key, SUDT_TRANSFER_AMOUNT),
     ];
 
-    let sudt_tx_hash = transfer_sudt(&client, &source_key, &sudt_recipients);
-    println!("sUDT transfer complete: {:#x}\n", sudt_tx_hash);
+    let tx_hash = transfer_ckb_and_sudt(&client, &source_key, &ckb_recipients, &sudt_recipients);
 
-    println!("=== All transfers complete! ===");
+    println!("\n=== All transfers complete in single transaction! ===");
+    println!("Transaction hash: {:#x}", tx_hash);
 }
