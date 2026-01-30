@@ -17,6 +17,10 @@ COPY contracts /contracts
 RUN mkdir /ckb
 COPY ckb-keys/node1-key /ckb/key
 
+RUN mkdir /fiber
+COPY fiber-keys/node1-key /fiber/sk
+RUN chmod 400 /fiber/sk
+
 COPY start.sh /start.sh
 RUN chmod +x /start.sh
 ENTRYPOINT ["/start.sh"]

@@ -11,6 +11,29 @@ fiber:
   announced_node_name: "fiber-node1"
   bootnode_addrs:
     - "/dns4/fiber-bootnode/tcp/8228/p2p/QmPi1oizWmjhFw6erAojoUFNpVyLs4XeVYAfzWHP1A7tTF"
+  scripts:
+    - name: FundingLock
+      script:
+        code_hash: 0x6c67887fe201ee0c7853f1682c0b77c0e6214044c156c7558269390a8afa6d7c
+        hash_type: type
+        args: 0x
+      cell_deps:
+        - cell_dep:
+            out_point:
+              tx_hash: 0xbc5ec0f8ec73974bc81ae02071ef3acaacf9ecd07df6346e10fdb8facc92d1f1 # ckb_auth
+              index: 0x5
+            dep_type: code
+    - name: CommitmentLock
+      script:
+        code_hash: 0x740dee83f87c6f309824d8fd3fbdd3c8380ee6fc9acc90b1a748438afcdf81d8
+        hash_type: type
+        args: 0x
+      cell_deps:
+        - cell_dep:
+            out_point:
+              tx_hash: 0xbc5ec0f8ec73974bc81ae02071ef3acaacf9ecd07df6346e10fdb8facc92d1f1 #ckb_auth
+              index: 0x6
+            dep_type: code
 rpc:
   listening_addr: 127.0.0.1:41716
   enabled_modules:
@@ -43,7 +66,7 @@ ckb:
       - cell_dep:
           out_point:
             tx_hash: 0xbc5ec0f8ec73974bc81ae02071ef3acaacf9ecd07df6346e10fdb8facc92d1f1
-            index: 0x7
+            index: 0x8
           dep_type: code
 
 services:
