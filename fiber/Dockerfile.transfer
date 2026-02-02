@@ -1,0 +1,13 @@
+FROM debian:12
+
+RUN apt-get update
+RUN apt-get install git curl gcc g++ make libclang-dev pkg-config libssl-dev -y
+
+RUN curl https://sh.rustup.rs -sSf | sh -s -- -y
+
+COPY transfer /transfer
+COPY ckb-keys /ckb-keys
+
+RUN cd /transfer && /root/.cargo/bin/cargo build --release && cp /transfer/target/release/fiber-demo-startup-transfer-ckb-and-udt /
+
+ENTRYPOINT ["/fiber-demo-startup-transfer-ckb-and-udt"]

@@ -15,16 +15,16 @@ use std::collections::HashMap;
 use std::fs;
 use std::str::FromStr;
 
-const CKB_RPC_URL: &str = "http://127.0.0.1:8114";
+const CKB_RPC_URL: &str = "http://ckb:8114";
 
 const SOURCE_PRIVATE_KEY: &str = "63d86723e08f0f813a36ce6aa123bb2289d90680ae1e99d4de8cdb334553f24d";
 
 // Key file paths
-const BOOTNODE_KEY_FILE: &str = "fiber/ckb-keys/bootnode-key";
+const BOOTNODE_KEY_FILE: &str = "ckb-keys/bootnode-key";
 
-const NODE1_KEY_FILE: &str = "fiber/ckb-keys/node1-key";
-const NODE2_KEY_FILE: &str = "fiber/ckb-keys/node2-key";
-const NODE3_KEY_FILE: &str = "fiber/ckb-keys/node3-key";
+const NODE1_KEY_FILE: &str = "ckb-keys/node1-key";
+const NODE2_KEY_FILE: &str = "ckb-keys/node2-key";
+const NODE3_KEY_FILE: &str = "ckb-keys/node3-key";
 
 const SUDT_CODE_HASH: H256 =
     h256!("0xe1e354d6d643ad42724d40967e334984534e0367405c5ae42a9d7d63d77df419");

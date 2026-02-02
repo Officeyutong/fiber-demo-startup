@@ -16,7 +16,7 @@ fiber:
       cell_deps:
         - cell_dep:
             out_point:
-              tx_hash: 0xbc5ec0f8ec73974bc81ae02071ef3acaacf9ecd07df6346e10fdb8facc92d1f1 # ckb_auth
+              tx_hash: 0x14f28bb0b08c6c24c73e206297a8dacb631c9bbbef1d654f105e3a61616ea36c # ckb_auth
               index: 0x5
             dep_type: code
     - name: CommitmentLock
@@ -27,7 +27,7 @@ fiber:
       cell_deps:
         - cell_dep:
             out_point:
-              tx_hash: 0xbc5ec0f8ec73974bc81ae02071ef3acaacf9ecd07df6346e10fdb8facc92d1f1 #ckb_auth
+              tx_hash: 0x14f28bb0b08c6c24c73e206297a8dacb631c9bbbef1d654f105e3a61616ea36c #ckb_auth
               index: 0x5
             dep_type: code
 rpc:
@@ -61,7 +61,7 @@ ckb:
       cell_deps:
       - cell_dep:
           out_point:
-            tx_hash: 0xbc5ec0f8ec73974bc81ae02071ef3acaacf9ecd07df6346e10fdb8facc92d1f1
+            tx_hash: 0x14f28bb0b08c6c24c73e206297a8dacb631c9bbbef1d654f105e3a61616ea36c
             index: 0x8
           dep_type: code
 

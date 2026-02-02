@@ -99,3 +99,12 @@ services:
       - 8233:8228
       - 10003:10000
     <<: *preset
+  transfer:
+    build:
+      context: ./fiber
+      dockerfile: Dockerfile.transfer
+      network: host
+    depends_on:
+      ckb:
+        condition: service_healthy
+    <<: *preset
