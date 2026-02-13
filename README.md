@@ -26,28 +26,40 @@ docker compose up --build
 
 The first build requires compiling CKB and Fiber from source, which may take a considerable amount of time.
 
+### Clean Up Environment
+
+To reset the Fiber nodes' state (e.g., channels, payment history), stop the services and delete the store directories:
+
+```bash
+docker compose down
+rm -rf fiber/nodes/*/store
+```
+
+Then restart with `docker compose up` to start fresh.
+
 ### Service Ports
 
 | Service | RPC Port | P2P Port |
 |---------|----------|----------|
 | CKB | 8114 | - |
-| fiber-bootnode | 8230 | 10000 |
-| fiber-node1 | 8231 | 10001 |
-| fiber-node2 | 8232 | 10002 |
-| fiber-node3 | 8233 | 10003 |
+| fiber-bootnode | 10000 | 8230 |
+| fiber-node1 | 10001 | 8231 |
+| fiber-node2 | 10002 | 8232 |
+| fiber-node3 | 10003 | 8233 |
+| fiber-web | 3000 | - |
 
 ### Calling Fiber RPC
 
 ```bash
 # Query node info
-curl -X POST http://127.0.0.1:8231 \
+curl -X POST http://127.0.0.1:10001 \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","method":"node_info","params":[],"id":1}'
 ```
 
 ## Docker Images
 
-This project contains 6 Docker images:
+This project contains 7 Docker images:
 
 ### 1. ckb
 
@@ -66,7 +78,7 @@ This project contains 6 Docker images:
 - Other Fiber nodes discover peers through this node
 - Runs the Fiber daemon (fnn)
 - Configured as the entry point for the gossip network
-- RPC port: 8230, P2P port: 10000
+- RPC port: 10000, P2P port: 8230
 
 ### 3. fiber-node1 / fiber-node2 / fiber-node3
 
@@ -87,6 +99,20 @@ This project contains 6 Docker images:
 - Transfers 1 billion sUDT to node1, node2, and node3
 - After distribution, each Fiber node has sufficient funds to open payment channels and perform test transactions
 
+### 5. fiber-web
+
+**Purpose**: Web-based monitoring and management panel ([fiber-nodes-monit](https://github.com/gpBlockchain/fiber-nodes-monit))
+
+- Provides a web UI for monitoring and operating Fiber nodes
+- Built with React + TypeScript + Vite, served by a Node.js backend
+- Includes a JSON-RPC proxy that forwards browser requests to Fiber node RPC endpoints
+- Accessible at http://127.0.0.1:3000 after startup
+- To add nodes for monitoring, use the Docker internal service names as RPC URLs:
+  - `http://fiber-bootnode:10000`
+  - `http://fiber-node1:10000`
+  - `http://fiber-node2:10000`
+  - `http://fiber-node3:10000`
+
 ## Directory Structure
 
 ```
@@ -98,18 +124,28 @@ This project contains 6 Docker images:
 │   ├── contracts/          # Pre-deployed smart contracts
 │   └── run.sh              # CKB startup script
 ├── fiber/                  # Fiber node configuration
-│   ├── Dockerfile.bootnode # Bootnode image build file
-│   ├── Dockerfile.node1    # Node1 image build file
-│   ├── Dockerfile.node2    # Node2 image build file
-│   ├── Dockerfile.node3    # Node3 image build file
+│   ├── Dockerfile          # Fiber image build file (generic, shared by all nodes)
 │   ├── Dockerfile.transfer # Transfer tool image build file
-│   ├── config-*.yml        # Node configuration files
-│   ├── ckb-keys/           # CKB account private keys
-│   ├── fiber-keys/         # Fiber node private keys
 │   ├── contracts/          # Fiber contracts
+│   ├── start.sh            # Fiber node startup script
 │   ├── transfer/           # Fund distribution tool source code
-│   └── start.sh            # Fiber node startup script
+│   └── nodes/              # Per-node configuration directories
+│       ├── bootnode/       # Bootnode configuration
+│       │   ├── ckb/
+│       │   │   └── key     # CKB account private key
+│       │   ├── config.yml  # Node configuration
+│       │   ├── dev.toml    # Chain spec
+│       │   ├── fiber/
+│       │   │   └── sk      # Fiber node secret key
+│       │   └── store/      # Runtime data (created automatically, delete to reset)
+│       ├── node1/          # Node1 configuration (same structure)
+│       ├── node2/          # Node2 configuration (same structure)
+│       └── node3/          # Node3 configuration (same structure)
+├── fiber-web/              # Web monitoring panel
+│   └── Dockerfile          # fiber-nodes-monit image build file
 ```
+
+Each node directory follows a standardized layout and is mounted into the container at runtime via Docker volumes. The `store/` directory is created automatically when the node runs and contains the node's state data.
 
 ## Startup Order
 
@@ -119,6 +155,7 @@ Docker Compose starts services in the following order:
 2. **transfer** - Runs fund distribution after CKB is ready
 3. **fiber-bootnode** - Starts the bootstrap node after CKB is ready
 4. **fiber-node1/2/3** - Start regular nodes after bootnode is ready
+5. **fiber-web** - Starts the web monitoring panel after bootnode is ready
 
 ## Notes
 

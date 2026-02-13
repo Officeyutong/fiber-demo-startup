@@ -24,8 +24,10 @@ services:
   fiber-bootnode:
     build:
       context: ./fiber
-      dockerfile: Dockerfile.bootnode
+      dockerfile: Dockerfile
       network: host
+      args:
+        NODE_NAME: bootnode
     healthcheck:
       test: ["CMD", "curl", "http://127.0.0.1:41716"]
       interval: 5s
@@ -35,6 +37,11 @@ services:
     ports:
       - 8230:8228
       - 10000:10000
+    volumes:
+      - ./fiber/nodes/bootnode/config.yml:/config.yml:ro
+      - ./fiber/nodes/bootnode/dev.toml:/dev.toml:ro
+      - ./fiber/nodes/bootnode/fiber/sk:/fiber/sk:ro
+      - ./fiber/nodes/bootnode/store:/store
     depends_on:
       ckb:
         condition: service_healthy
@@ -42,8 +49,10 @@ services:
   fiber-node1:
     build:
       context: ./fiber
-      dockerfile: Dockerfile.node1
+      dockerfile: Dockerfile
       network: host
+      args:
+        NODE_NAME: node1
     healthcheck:
       test: ["CMD", "curl", "http://127.0.0.1:41716"]
       interval: 5s
@@ -58,12 +67,19 @@ services:
     ports:
       - 8231:8228
       - 10001:10000
+    volumes:
+      - ./fiber/nodes/node1/config.yml:/config.yml:ro
+      - ./fiber/nodes/node1/dev.toml:/dev.toml:ro
+      - ./fiber/nodes/node1/fiber/sk:/fiber/sk:ro
+      - ./fiber/nodes/node1/store:/store
     <<: *preset
   fiber-node2:
     build:
       context: ./fiber
-      dockerfile: Dockerfile.node2
+      dockerfile: Dockerfile
       network: host
+      args:
+        NODE_NAME: node2
     healthcheck:
       test: ["CMD", "curl", "http://127.0.0.1:41716"]
       interval: 5s
@@ -78,12 +94,19 @@ services:
     ports:
       - 8232:8228
       - 10002:10000
+    volumes:
+      - ./fiber/nodes/node2/config.yml:/config.yml:ro
+      - ./fiber/nodes/node2/dev.toml:/dev.toml:ro
+      - ./fiber/nodes/node2/fiber/sk:/fiber/sk:ro
+      - ./fiber/nodes/node2/store:/store
     <<: *preset
   fiber-node3:
     build:
       context: ./fiber
-      dockerfile: Dockerfile.node3
+      dockerfile: Dockerfile
       network: host
+      args:
+        NODE_NAME: node3
     healthcheck:
       test: ["CMD", "curl", "http://127.0.0.1:41716"]
       interval: 5s
@@ -98,6 +121,22 @@ services:
     ports:
       - 8233:8228
       - 10003:10000
+    volumes:
+      - ./fiber/nodes/node3/config.yml:/config.yml:ro
+      - ./fiber/nodes/node3/dev.toml:/dev.toml:ro
+      - ./fiber/nodes/node3/fiber/sk:/fiber/sk:ro
+      - ./fiber/nodes/node3/store:/store
+    <<: *preset
+  fiber-web:
+    build:
+      context: ./fiber-web
+      dockerfile: Dockerfile
+      network: host
+    ports:
+      - 3000:3000
+    depends_on:
+      fiber-bootnode:
+        condition: service_healthy
     <<: *preset
   transfer:
     build:
